@@ -1,7 +1,7 @@
 # Начало работы
 
 ```bash
-git clone ...
+git clone https://github.com/E4x7k/ai-buddy-by-domashnie.git
 uv sync
 ```
 
