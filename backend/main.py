@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Запуск приложения...")
+    logger.info("Иницализация чеклиста")
     init_checklist_db()
     init_db()
     
@@ -57,8 +58,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title='Avito AI-buddy Backend', lifespan=lifespan)
 START_TIME = datetime.now(UTC)
 
-@app.get("/checklist")
+@app.get("/checklist",tags=["checklist"])
 def checklist():
+    """Эндпоинт для вывода чеклиста"""
     connection=sqlite3.connect("database.db")
     result=get_checklist(connection)
     return result
@@ -72,8 +74,9 @@ async def health_check():
         "timestamp": now.isoformat(),
     }
 
-@app.post("/checklist/toggle:")
+@app.post("/checklist/toggle:",tags=["checklist"])
 def toggle_checklist(request: ToggleChecklistRequest):
+    """Эндпоинт для изменения значение у таски"""
     ask=toggle_item(request.item_id)
     if ask==False:
         raise HTTPException(status_code=404,detail="Задачи нет")

@@ -30,6 +30,15 @@ def seed_checklist(connection: sqlite3.Connection):
         cursor.executemany("INSERT INTO checklist (title) VALUES (?)",basetasks)
         connection.commit()
 def get_checklist(connection: sqlite3.Connection):
+    """Выдаёт чеклист и процентв выполнения чеклиста
+        
+            Args:
+                connection (sqlite3.Connection): бд
+        
+            Returns:
+                dict: где items - таски
+                      progress_percentage - процент выполнения чеклиста
+            """
     tasks=[]
     count=0
     currentcount=0
@@ -52,6 +61,14 @@ def get_checklist(connection: sqlite3.Connection):
         "progress_percentage":progress_percentage
         }
 def toggle_item(item_id: int):
+    """Меняет значение таски в чек листе
+            
+                Args:
+                    item_id (int): id таски
+            
+                Returns:
+                    bool: где если True,то значение задачи изменилось,а если False, то задача не найдена
+                """
     connection=sqlite3.connect("database.db")
     cursor=connection.cursor()
     cursor.execute("""
@@ -61,9 +78,10 @@ def toggle_item(item_id: int):
                    """,(item_id,))
     win=cursor.rowcount>0
     connection.commit()
-    return True
+    return win
 def init_checklist_db():
+    """Инициализация чеклиста
+                    """
     connection=sqlite3.connect("database.db")
     seed_checklist(connection)
-    logger.info("ВСЁ ХОРОШО")
     
