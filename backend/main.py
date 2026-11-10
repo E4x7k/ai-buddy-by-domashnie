@@ -2,17 +2,19 @@ import json
 import logging
 import os
 import sys
+import sqlite3
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import AsyncGenerator
 
 import chromadb
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
 
-from backend.schemas import ChatRequest
+from backend.schemas import ChatRequest,ToggleChecklistRequest
+from backend.services.checklist_service import init_checklist_db,get_checklist,toggle_item
 from backend.services.embedder import get_embedder
 from backend.services.memory import init_db, get_history, save_message
 from ml_core.rag_engine import RAGService
@@ -30,7 +32,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Запуск приложения...")
-    
+    init_checklist_db()
     init_db()
     
     logger.info("Загрузка модели эмбеддингов...")
@@ -55,7 +57,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title='Avito AI-buddy Backend', lifespan=lifespan)
 START_TIME = datetime.now(UTC)
 
-
+@app.get("/checklist")
+def checklist():
+    connection=sqlite3.connect("database.db")
+    result=get_checklist(connection)
+    return result
 @app.get("/health", tags=["system"])
 async def health_check():
     now = datetime.now(UTC)
@@ -66,7 +72,12 @@ async def health_check():
         "timestamp": now.isoformat(),
     }
 
-
+@app.post("/checklist/toggle:")
+def toggle_checklist(request: ToggleChecklistRequest):
+    ask=toggle_item(request.item_id)
+    if ask==False:
+        raise HTTPException(status_code=404,detail="Задачи нет")
+    
 @app.post("/chat", tags=["chat"])
 async def chat_endpoint(req: ChatRequest, request: Request):
     """Эндпоинт для общения с AI-buddy (с поддержкой стриминга)."""
