@@ -7,11 +7,10 @@ uv sync
 
 # Запуск
 
-### 1. Сервер
+### 1. Сервер (запускать теперь из корня проекта)
 
 ```bash
-cd backend
-uvicorn main:app --reload
+uvicorn backend.main:app --reload
 ```
 
 ### 2. Клиент
