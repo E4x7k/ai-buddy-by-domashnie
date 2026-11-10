@@ -8,7 +8,7 @@ from fastembed import TextEmbedding
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 logger = logging.getLogger(__name__)
 
 class RAGService:
@@ -194,7 +194,7 @@ class RAGService:
 
             logger.info("Отправка результата инструмента обратно в LLM...")
             final_response = await self.llm_client.chat.completions.create(
-                model="deepseek-v4.1-flash",
+                model=os.getenv("MODEL"),
                 messages=messages,
                 temperature=0.1,
                 stream=True
