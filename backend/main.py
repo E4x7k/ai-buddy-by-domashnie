@@ -13,7 +13,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
 
-from backend.schemas import ChatRequest,ToggleChecklistRequest
+from backend.schemas import ChatRequest,ToggleChecklistRequest,ChecklistResponse
 from backend.services.checklist_service import init_checklist_db,get_checklist,toggle_item
 from backend.services.embedder import get_embedder
 from backend.services.memory import init_db, get_history, save_message
@@ -61,10 +61,10 @@ START_TIME = datetime.now(UTC)
 @app.get("/checklist",tags=["checklist"])
 def checklist():
     """Эндпоинт для вывода чеклиста"""
-    connection=sqlite3.connect("database.db")
+    connection=sqlite3.connect("budy.db")
     result=get_checklist(connection)
     return result
-@app.get("/health", tags=["system"])
+@app.get("/health", tags=["system"],response_model=ChecklistResponse)
 async def health_check():
     now = datetime.now(UTC)
     return {
@@ -74,7 +74,7 @@ async def health_check():
         "timestamp": now.isoformat(),
     }
 
-@app.post("/checklist/toggle:",tags=["checklist"])
+@app.post("/checklist/toggle",tags=["checklist"])
 def toggle_checklist(request: ToggleChecklistRequest):
     """Эндпоинт для изменения значение у таски"""
     ask=toggle_item(request.item_id)
