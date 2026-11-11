@@ -40,3 +40,6 @@ class ActionResponse(BaseModel):
     status: str = Field(..., description="Статус операции: 'success' или 'error'")
     message: str = Field(..., description="Текст для отображения пользователю")
     ticket_id: int | None = Field(default=None, description="Номер созданной заявки при наличии")
+    
+class AccessRequest(BaseModel):
+    resource: str = Field(...,description="Корперативный сервис")

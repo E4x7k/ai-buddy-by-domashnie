@@ -3,6 +3,7 @@ import logging
 import os
 import sys
 import sqlite3
+import random
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import AsyncGenerator
@@ -13,7 +14,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
 
-from backend.schemas import ChatRequest,ToggleChecklistRequest,ChecklistResponse
+from backend.schemas import ChatRequest,ToggleChecklistRequest,ChecklistResponse,VacationRequest,ActionResponse,AccessRequest
 from backend.services.checklist_service import init_checklist_db,get_checklist,toggle_item
 from backend.services.embedder import get_embedder
 from backend.services.memory import init_db, get_history, save_message
@@ -80,8 +81,28 @@ def toggle_checklist(request: ToggleChecklistRequest):
     ask=toggle_item(request.item_id)
     if ask==False:
         raise HTTPException(status_code=404,detail="Задачи нет")
-
     return {"status": "success"}
+
+
+@app.post("/actions/vacation",response_model=ActionResponse,tags=["requests"])
+def request_time_off(request: VacationRequest):
+    """Эндпоинт, создающий заявку на отгул"""
+    ticket_id=random.randint(1000,9999)
+    message=f"Заявка на отгул на {request.date} по причине '{request.reason}' создана."
+    return {"status": "success",
+            "ticket_id": ticket_id,
+            "message": message}
+    
+
+@app.post("/actions/access",response_model=ActionResponse,tags=["requests"])
+def request_corp_service(request: AccessRequest):
+    """Эндпоинт, создающий заявку на доступ к сервису"""
+    ticket_id=random.randint(1000,9999)
+    message=f"Заявка на доступ к {request.resource} отправлена в Service Desk."
+    return {"status": "success",
+            "ticket_id": ticket_id,
+            "message": message}
+    
     
 @app.post("/chat", tags=["chat"])
 async def chat_endpoint(req: ChatRequest, request: Request):
