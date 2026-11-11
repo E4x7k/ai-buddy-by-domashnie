@@ -58,13 +58,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title='Avito AI-buddy Backend', lifespan=lifespan)
 START_TIME = datetime.now(UTC)
 
-@app.get("/checklist",tags=["checklist"])
+@app.get("/checklist",tags=["checklist"],response_model=ChecklistResponse)
 def checklist():
     """Эндпоинт для вывода чеклиста"""
     connection=sqlite3.connect("budy.db")
     result=get_checklist(connection)
     return result
-@app.get("/health", tags=["system"],response_model=ChecklistResponse)
+@app.get("/health", tags=["system"])
 async def health_check():
     now = datetime.now(UTC)
     return {
