@@ -1,6 +1,7 @@
 import streamlit as st
 import requests 
 import uuid
+import json
 
 if "messages" not in st.session_state: #пустая история с сообщениями от пользователя
     st.session_state.messages = []
@@ -37,30 +38,68 @@ with st.sidebar:
             st.write("Тут должен быть запрос")
     
     
-    cleaning = st.button("Очиститить историю")
+    cleaning = st.button("Очистить историю")
     if cleaning:
         st.session_state.session_id = str(uuid.uuid4()) # Кнопка очищающая историю собщений и создающая новый id
         st.session_state.messages = []
 
-st.title(f'Доброго времени суток , {st.session_state.user_role}')
+st.title(f"Доброго времени суток, {st.session_state.user_role}")
 
-# ----ЧАТ----
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        if message.get("sources"):
+            with st.expander("📚 Источники"):
+                for src in message["sources"]:
+                    st.write(f"- {src}")
 
-prompt = st.chat_input("Задайте вопрос...")
-if prompt:
-     st.session_state.messages.append(prompt)
-     with st.spinner("Печатает..."):
+if prompt := st.chat_input("Задайте вопрос..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    with st.chat_message("assistant"):
+        sources_placeholder = st.empty()
+        text_placeholder = st.empty()
+        
+        full_response = ""
+        current_sources = []
+
         try:
-            response = requests.post("http://127.0.0.1:8000/chat",json={"session_id": st.session_state.session_id, "message": prompt, "user_role": st.session_state.user_role})
-            st.write(response.json()['answer'])
-        except:
-            st.error("Бэкенд недоступен") 
-        st.write('')#Чтобы не ломалось
-    # data = response.json()
-    # if 'sources' in data:
-        # with st.expander("Источники"): 
-                # st.write(response.json()["sources"])
-for hist in st.session_state.messages:
-    st.write(hist)    
-    #st.write(response.json()["answer"])
+            payload = {
+                "session_id": st.session_state.session_id,
+                "message": prompt,
+                "user_role": st.session_state.user_role
+            }
+            
+            with requests.post("http://127.0.0.1:8000/chat", json=payload, stream=True, timeout=60) as response:
+                response.raise_for_status()
 
+                for line in response.iter_lines(decode_unicode=True):
+                    if not line: continue
+                    try:
+                        data = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    
+                    if "sources" in data:
+                        current_sources = data["sources"]
+                        if current_sources:
+                            with sources_placeholder.expander("📚 Источники (найдены)"):
+                                for src in current_sources:
+                                    st.write(f"- {src}")
+                    
+                    elif "text" in data:
+                        full_response += data["text"]
+                        text_placeholder.markdown(full_response + "▌")
+            
+            text_placeholder.markdown(full_response)
+            
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": full_response,
+                "sources": current_sources
+            })
+
+        except Exception as e:
+            st.error(f"Ошибка соединения: {e}")
