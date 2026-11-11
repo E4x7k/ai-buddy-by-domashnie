@@ -16,4 +16,4 @@ data/*
 models/
 chat_history.db
 chroma_db
-budy.db
+buddy.db

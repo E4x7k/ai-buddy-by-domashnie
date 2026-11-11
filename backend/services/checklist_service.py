@@ -74,7 +74,7 @@ def toggle_item(item_id: int):
                 Returns:
                     bool: где если True,то значение задачи изменилось,а если False, то задача не найдена
                 """
-    connection=sqlite3.connect("budy.db")
+    connection=sqlite3.connect("buddy.db")
     cursor=connection.cursor()
     cursor.execute("""
                    UPDATE checklist
@@ -87,6 +87,6 @@ def toggle_item(item_id: int):
 def init_checklist_db():
     """Инициализация чеклиста
                     """
-    connection=sqlite3.connect("budy.db")
+    connection=sqlite3.connect("buddy.db")
     seed_checklist(connection)
     

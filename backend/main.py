@@ -61,7 +61,7 @@ START_TIME = datetime.now(UTC)
 @app.get("/checklist",tags=["checklist"],response_model=ChecklistResponse)
 def checklist():
     """Эндпоинт для вывода чеклиста"""
-    connection=sqlite3.connect("budy.db")
+    connection=sqlite3.connect("buddy.db")
     result=get_checklist(connection)
     return result
 @app.get("/health", tags=["system"])
@@ -80,6 +80,8 @@ def toggle_checklist(request: ToggleChecklistRequest):
     ask=toggle_item(request.item_id)
     if ask==False:
         raise HTTPException(status_code=404,detail="Задачи нет")
+
+    return {"status": "success"}
     
 @app.post("/chat", tags=["chat"])
 async def chat_endpoint(req: ChatRequest, request: Request):
