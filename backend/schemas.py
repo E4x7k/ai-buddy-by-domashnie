@@ -42,4 +42,4 @@ class ActionResponse(BaseModel):
     ticket_id: int | None = Field(default=None, description="Номер созданной заявки при наличии")
     
 class AccessRequest(BaseModel):
-    resource: str = Field(...,description="Корперативный сервис")
+    resource: str = Field(...,description="Корпоративный сервис")
