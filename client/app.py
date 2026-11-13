@@ -9,6 +9,11 @@ if "messages" not in st.session_state: #пустая история с сооб�
 if "session_id" not in st.session_state: #дает сессии id    
     st.session_state.session_id = str(uuid.uuid4()) #Создание id сессии
 
+if "is_generating" not in st.session_state:
+    st.session_state.is_generating = False
+if "pending_prompt" not in st.session_state:
+    st.session_state.pending_prompt = None
+
 def get_checklist():
     try:
         response = requests.get("http://127.0.0.1:8000/checklist")  
@@ -25,23 +30,23 @@ def toggle_task(item_id):
         for item in st.session_state.checklist['items']:
             if item['id'] == item_id:
                 item['is_completed'] = not item['is_completed']
-            break
+                break
     except Exception:
         st.error("Не удалось сохранить статус")
 
 # ----САЙДБАР----
 with st.sidebar:
     role_mapping = {"Стажёр": "intern", "Наставник": "mentor"}
-    display_role = st.radio("Я:", list(role_mapping.keys()))
+    display_role = st.radio("Я:", list(role_mapping.keys()), disabled=st.session_state.is_generating)
     st.session_state.user_role = role_mapping[display_role]
     if st.session_state.user_role == "mentor":
         dis = True
     else:                                       
         dis = False
     for item in st.session_state.checklist['items']:
-        st.checkbox(item["title"],disabled=dis, value=item["is_completed"], key=f"check_{item['id']}",on_change=toggle_task,args=[item["id"]])
+        st.checkbox(item["title"], disabled=(dis or st.session_state.is_generating), key=f"check_{item['id']}",on_change=toggle_task,args=[item["id"]])
     
-    cleaning = st.button("Очистить историю")
+    cleaning = st.button("Очистить историю", disabled=st.session_state.is_generating)
     if cleaning:
         st.session_state.session_id = str(uuid.uuid4()) # Кнопка очищающая историю собщений и создающая новый id
         st.session_state.messages = []
@@ -56,14 +61,16 @@ for message in st.session_state.messages:
                 for src in message["sources"]:
                     st.write(f"- {src}")
 
-if prompt := st.chat_input("Задайте вопрос..."):
+if prompt := st.chat_input("Задайте вопрос...", disabled=st.session_state.is_generating):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
-        st.markdown(prompt)
+    st.session_state.pending_prompt = prompt
+    st.session_state.is_generating = True
+    st.rerun()
 
+if st.session_state.is_generating and st.session_state.pending_prompt:
     with st.chat_message("assistant"):
-        sources_placeholder = st.empty()
-        text_placeholder = st.empty()
+        text_placeholder = st.empty() 
+        sources_placeholder = st.empty() 
         
         full_response = ""
         current_sources = []
@@ -71,7 +78,7 @@ if prompt := st.chat_input("Задайте вопрос..."):
         try:
             payload = {
                 "session_id": st.session_state.session_id,
-                "message": prompt,
+                "message": st.session_state.pending_prompt,
                 "user_role": st.session_state.user_role
             }
             
@@ -94,6 +101,7 @@ if prompt := st.chat_input("Задайте вопрос..."):
                     
                     elif "text" in data:
                         full_response += data["text"]
+                        text_placeholder.markdown(full_response + "▌")
             
             text_placeholder.markdown(full_response)
             
@@ -105,3 +113,8 @@ if prompt := st.chat_input("Задайте вопрос..."):
 
         except Exception as e:
             st.error(f"Ошибка соединения: {e}")
+            
+        finally:
+            st.session_state.is_generating = False
+            st.session_state.pending_prompt = None
+            st.rerun()

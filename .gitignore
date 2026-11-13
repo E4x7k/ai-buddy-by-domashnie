@@ -17,3 +17,4 @@ models/
 chat_history.db
 chroma_db
 buddy.db
+.DS_Store
