@@ -35,7 +35,7 @@ def toggle_task(item_id):
 with st.sidebar:
     st.header("Настройки")
     role_mapping = {"Стажёр": "intern", "Наставник": "mentor"}
-    display_role = st.radio("Я:", list(role_mapping.keys()), disabled=st.session_state.is_generating)
+    display_role = st.radio("Выбор роли:", list(role_mapping.keys()), disabled=st.session_state.is_generating)
     st.session_state.user_role = role_mapping[display_role]
     if st.session_state.user_role == "mentor":
         dis = True
