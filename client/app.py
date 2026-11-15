@@ -1,5 +1,5 @@
 import streamlit as st
-import requests 
+import requests
 import uuid
 import json
 import os
@@ -9,7 +9,7 @@ API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 if "messages" not in st.session_state: #пустая история с сообщениями от пользователя
     st.session_state.messages = []
 
-if "session_id" not in st.session_state: #дает сессии id    
+if "session_id" not in st.session_state: #дает сессии id
     st.session_state.session_id = str(uuid.uuid4()) #Создание id сессии
 
 if "is_generating" not in st.session_state:
@@ -27,28 +27,38 @@ def get_checklist():
 if "checklist" not in st.session_state:
     st.session_state.checklist = get_checklist()
 
-def toggle_task(item_id):
+def toggle_task(item_id):   
     try:
         requests.post(f"{API_URL}/checklist/toggle", json={"item_id": item_id})
-        for item in st.session_state.checklist['items']:
-            if item['id'] == item_id:
-                item['is_completed'] = not item['is_completed']
-                break
+        st.session_state.checklist = get_checklist()
     except Exception:
         st.error("Не удалось сохранить статус")
 
 # ----САЙДБАР----
 with st.sidebar:
+    st.header("Настройки")
     role_mapping = {"Стажёр": "intern", "Наставник": "mentor"}
-    display_role = st.radio("Я:", list(role_mapping.keys()), disabled=st.session_state.is_generating)
+    display_role = st.radio("Выбор роли:", list(role_mapping.keys()), disabled=st.session_state.is_generating)
     st.session_state.user_role = role_mapping[display_role]
     if st.session_state.user_role == "mentor":
         dis = True
-    else:                                       
+    else:
         dis = False
-    for item in st.session_state.checklist['items']:
-        st.checkbox(item["title"], disabled=(dis or st.session_state.is_generating), key=f"check_{item['id']}",on_change=toggle_task,args=[item["id"]])
-    
+
+    st.divider()
+
+    with st.container(border=True):
+        st.subheader("Мой прогресс")
+
+        progress = st.session_state.checklist.get("progress_percentage", 0)
+        progress_fraction = float(progress) / 100
+        st.progress(progress_fraction, text=f"Выполнено: {progress:.0f}%")
+
+        for item in st.session_state.checklist['items']:
+            st.checkbox(item["title"], disabled=(dis or st.session_state.is_generating), key=f"check_{item['id']}",on_change=toggle_task,args=[item["id"]],value=item["is_completed"])
+
+    st.divider()
+
     cleaning = st.button("Очистить историю", disabled=st.session_state.is_generating)
     if cleaning:
         st.session_state.session_id = str(uuid.uuid4()) # Кнопка очищающая историю собщений и создающая новый id
@@ -72,9 +82,9 @@ if prompt := st.chat_input("Задайте вопрос...", disabled=st.session
 
 if st.session_state.is_generating and st.session_state.pending_prompt:
     with st.chat_message("assistant"):
-        text_placeholder = st.empty() 
-        sources_placeholder = st.empty() 
-        
+        text_placeholder = st.empty()
+        sources_placeholder = st.empty()
+
         full_response = ""
         current_sources = []
 
@@ -94,29 +104,29 @@ if st.session_state.is_generating and st.session_state.pending_prompt:
                         data = json.loads(line)
                     except json.JSONDecodeError:
                         continue
-                    
+
                     if "sources" in data:
                         current_sources = data["sources"]
                         if current_sources:
                             with sources_placeholder.expander("📚 Источники (найдены)"):
                                 for src in current_sources:
                                     st.write(f"- {src}")
-                    
+
                     elif "text" in data:
                         full_response += data["text"]
                         text_placeholder.markdown(full_response + "▌")
-            
+
             text_placeholder.markdown(full_response)
-            
+
             st.session_state.messages.append({
-                "role": "assistant", 
+                "role": "assistant",
                 "content": full_response,
                 "sources": current_sources
             })
 
         except Exception as e:
             st.error(f"Ошибка соединения: {e}")
-            
+
         finally:
             st.session_state.is_generating = False
             st.session_state.pending_prompt = None
