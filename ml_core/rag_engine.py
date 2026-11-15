@@ -3,9 +3,11 @@ import json
 import logging
 from typing import AsyncGenerator
 import os
+import httpx
+from datetime import date
 
 from fastembed import TextEmbedding
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, APIError, RateLimitError, APIConnectionError
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -53,6 +55,9 @@ class RAGService:
                 
             logger.info("Исходный: '%s' -> Переформулирован: '%s'", question, rewritten)
             return rewritten
+        except (APIError, RateLimitError, APIConnectionError) as e:
+            logger.error("Ошибка API при переформулировке: %s. Используем fallback.", e)
+            return question
         except Exception as e:
             logger.error("Ошибка при переформулировке: %s", e)
             return question
@@ -110,20 +115,36 @@ class RAGService:
             "content": f"Контекст из базы знаний:\n{context}\n\nВопрос пользователя: {question}"
         })
 
+        today_str = date.today().isoformat()
+
         # Описание инструментов
         tools = [
             {
                 "type": "function",
                 "function": {
                     "name": "request_vacation",
-                    "description": "Оформляет заявку на отгул для стажера",
+                    "description": f"Оформляет заявку на отгул для стажера. Сегодняшняя дата: {today_str}. Используй, если стажер просит отгул или сообщает, что заболел.",
                     "parameters": {
                         "type": "object",
                         "properties": {
                             "date": {"type": "string", "description": "Дата отгула (в формате YYYY-MM-DD)"},
-                            "reason": {"type": "string", "description": "Причина отгула"}
+                            "reason": {"type": "string", "description": "Причина отгула (например, 'Болезнь')"}
                         },
                         "required": ["date", "reason"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "request_access",
+                    "description": "Создает заявку на доступ к корпоративным инструментам (Jira, Confluence, GitHub, Figma и т.д.).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "resource": {"type": "string", "description": "Название инструмента"}
+                        },
+                        "required": ["resource"]
                     }
                 }
             }
@@ -133,14 +154,24 @@ class RAGService:
         
         available_tools = tools if user_role == "intern" else None
 
-        response = await self.llm_client.chat.completions.create(
-            model=os.getenv("MODEL"),
-            messages=messages,
-            temperature=0.1,
-            stream=True,
-            tools=available_tools,
-            tool_choice="auto" if available_tools else "none"
-        )
+        try:
+            response = await self.llm_client.chat.completions.create(
+                model=os.getenv("MODEL"),
+                messages=messages,
+                temperature=0.1,
+                stream=True,
+                tools=available_tools,
+                tool_choice="auto" if available_tools else "none"
+            )
+        except (APIError, RateLimitError, APIConnectionError) as e:
+            logger.error("Ошибка API при основном запросе: %s", e)
+            error_msg = "⚠️ Ошибка: Сервис LLM временно недоступен (проблема с API-ключом или лимитами). Попробуйте позже."
+            yield json.dumps({"text": error_msg}, ensure_ascii=False) + "\n"
+            return
+        except Exception as e:
+            logger.error("Неизвестная ошибка LLM: %s", e)
+            yield json.dumps({"text": "⚠️ Внутренняя ошибка при обращении к нейросети."}, ensure_ascii=False) + "\n"
+            return
 
         tool_calls_to_process = []
         
@@ -174,32 +205,47 @@ class RAGService:
                 "tool_calls": [{"id": tc["id"], "type": "function", "function": {"name": tc["name"], "arguments": tc["arguments"]}} for tc in tool_calls_to_process]
             })
 
-            for tc in tool_calls_to_process:
-                if tc["name"] == "request_vacation":
-                    # заменить на вызов функции
-                    args = json.loads(tc["arguments"])
-                    logger.info("Симуляция оформления отгула: %s", args)
-                    
-                    mock_result = {
-                        "status": "success", 
-                        "message": f"Заявка на отгул на {args.get('date')} успешно создана.", 
-                        "ticket_id": 420
-                    }
-                    
+            async with httpx.AsyncClient() as client:
+                for tc in tool_calls_to_process:
+                    try:
+                        args = json.loads(tc["arguments"])
+                        
+                        if tc["name"] == "request_vacation":
+                            logger.info("Вызов API отгула: %s", args)
+                            res = await client.post("http://127.0.0.1:8000/actions/vacation", json=args)
+                            result_data = res.json()
+                            
+                        elif tc["name"] == "request_access":
+                            logger.info("Вызов API доступа: %s", args)
+                            res = await client.post("http://127.0.0.1:8000/actions/access", json=args)
+                            result_data = res.json()
+                        else:
+                            result_data = {"status": "error", "message": "Неизвестный инструмент"}
+                            
+                    except Exception as e:
+                        logger.error("Ошибка вызова API бэкенда: %s", e)
+                        result_data = {"status": "error", "message": f"Ошибка сервера: {str(e)}"}
+
                     messages.append({
                         "role": "tool",
                         "tool_call_id": tc["id"],
-                        "content": json.dumps(mock_result, ensure_ascii=False)
+                        "content": json.dumps(result_data, ensure_ascii=False)
                     })
 
             logger.info("Отправка результата инструмента обратно в LLM...")
-            final_response = await self.llm_client.chat.completions.create(
-                model=os.getenv("MODEL"),
-                messages=messages,
-                temperature=0.1,
-                stream=True
-            )
             
+            try:
+                final_response = await self.llm_client.chat.completions.create(
+                    model=os.getenv("MODEL"),
+                    messages=messages,
+                    temperature=0.1,
+                    stream=True
+                )
+            except Exception as e:
+                logger.error("Ошибка API при финальном запросе: %s", e)
+                yield json.dumps({"text": "\n\n⚠️ Заявка создана, но не удалось сформировать ответ."}, ensure_ascii=False) + "\n"
+                return
+
             try:
                 async for chunk in final_response:
                     if not chunk.choices: continue
