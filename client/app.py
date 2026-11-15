@@ -38,8 +38,19 @@ def toggle_task(item_id):
 with st.sidebar:
     st.header("Настройки")
     role_mapping = {"Стажёр": "intern", "Наставник": "mentor"}
+    
+    if "prev_role" not in st.session_state:
+        st.session_state.prev_role = "Стажёр"
+
     display_role = st.radio("Выбор роли:", list(role_mapping.keys()), disabled=st.session_state.is_generating)
     st.session_state.user_role = role_mapping[display_role]
+
+    if display_role != st.session_state.prev_role:
+        st.session_state.messages = []
+        st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.prev_role = display_role
+        st.rerun()
+
     if st.session_state.user_role == "mentor":
         dis = True
     else:
@@ -118,16 +129,18 @@ if st.session_state.is_generating and st.session_state.pending_prompt:
 
             text_placeholder.markdown(full_response)
 
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": full_response,
-                "sources": current_sources
-            })
-
         except Exception as e:
-            st.error(f"Ошибка соединения: {e}")
+            full_response = f"⚠️ Ошибка соединения: {e}"
+            text_placeholder.markdown(full_response)
 
         finally:
+            if full_response:
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": full_response,
+                    "sources": current_sources
+                })
+            
             st.session_state.is_generating = False
             st.session_state.pending_prompt = None
             st.rerun()

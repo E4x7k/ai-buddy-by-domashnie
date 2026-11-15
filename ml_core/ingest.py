@@ -5,6 +5,7 @@ from pathlib import Path
 
 import chromadb
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from tqdm import tqdm
 
 from backend.services.embedder import get_embedder
 
@@ -24,12 +25,7 @@ COLLECTION_NAME = "knowledge_base"
 
 
 def run_ingest() -> None:
-    """Наполняет векторную базу знаний ChromaDB эмбеддингами текстов из каталога data/.
-
-    Все файлы ``*.txt`` из каталога ``data/`` нарезаются на чанки, векторизуются моделью
-    эмбеддингов и сохраняются в постоянную коллекцию ChromaDB. Существующая коллекция
-    удаляется перед записью, чтобы при повторных запусках не появлялись дубликаты.
-    """
+    """Наполняет векторную базу знаний ChromaDB эмбеддингами текстов из каталога data/."""
     if not DATA_DIR.is_dir():
         logger.error("Папка %s не найдена. Создайте её и положите туда .txt файлы.", DATA_DIR)
         return
@@ -48,18 +44,13 @@ def run_ingest() -> None:
     txt_files = list(DATA_DIR.glob("*.txt"))
     logger.info("Найдено %d файлов для обработки.", len(txt_files))
 
-    for file_path in txt_files:
-        logger.info("Обработка файла: %s", file_path.name)
+    for file_path in tqdm(txt_files, desc="Чтение и нарезка файлов"):
         text = file_path.read_text(encoding="utf-8")
-
         chunks = text_splitter.split_text(text)
-        logger.info("  -> Получено %d чанков.", len(chunks))
 
         for i, chunk in enumerate(chunks):
             all_chunks.append(chunk)
-            # Метаданные: из какого файла взят кусок.
             all_metadatas.append({"source": file_path.name, "chunk_index": i})
-            # Уникальный ID чанка для ChromaDB.
             all_ids.append(f"{file_path.stem}_{i}")
 
     if not all_chunks:
@@ -67,8 +58,7 @@ def run_ingest() -> None:
         return
 
     embedder = get_embedder()
-    logger.info("Вычисление эмбеддингов для %d чанков (это может занять время)...", len(all_chunks))
-    embeddings = list(embedder.embed(all_chunks))
+    logger.info("Начинаем векторизацию и сохранение в ChromaDB...")
 
     client = chromadb.PersistentClient(path=str(CHROMA_DIR))
 
@@ -79,14 +69,22 @@ def run_ingest() -> None:
         logger.debug("Коллекции %s ещё не существует.", COLLECTION_NAME)
 
     collection = client.create_collection(name=COLLECTION_NAME)
-    logger.info("Сохранение в ChromaDB...")
 
-    collection.add(
-        documents=all_chunks,
-        embeddings=[emb.tolist() for emb in embeddings],
-        metadatas=all_metadatas,
-        ids=all_ids,
-    )
+    batch_size = 500
+    for i in tqdm(range(0, len(all_chunks), batch_size), desc="Векторизация и загрузка"):
+        batch_chunks = all_chunks[i : i + batch_size]
+        batch_metadatas = all_metadatas[i : i + batch_size]
+        batch_ids = all_ids[i : i + batch_size]
+
+        batch_embeddings = list(embedder.embed(batch_chunks))
+
+        collection.add(
+            documents=batch_chunks,
+            embeddings=[emb.tolist() for emb in batch_embeddings],
+            metadatas=batch_metadatas,
+            ids=batch_ids,
+        )
+
     logger.info("Успешно добавлено %d чанков в базу.", len(all_chunks))
 
 
