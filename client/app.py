@@ -24,14 +24,10 @@ def get_checklist():
 if "checklist" not in st.session_state:
     st.session_state.checklist = get_checklist()
 
-def toggle_task(item_id):
+def toggle_task(item_id):   
     try:
         requests.post("http://127.0.0.1:8000/checklist/toggle", json={"item_id": item_id})
         st.session_state.checklist = get_checklist()
-        for item in st.session_state.checklist['items']:
-            if item['id'] == item_id:
-                item['is_completed'] = not item['is_completed']
-                break
     except Exception:
         st.error("Не удалось сохранить статус")
 
@@ -56,7 +52,7 @@ with st.sidebar:
         st.progress(progress_fraction, text=f"Выполнено: {progress:.0f}%")
 
         for item in st.session_state.checklist['items']:
-            st.checkbox(item["title"], disabled=(dis or st.session_state.is_generating), key=f"check_{item['id']}",on_change=toggle_task,args=[item["id"]])
+            st.checkbox(item["title"], disabled=(dis or st.session_state.is_generating), key=f"check_{item['id']}",on_change=toggle_task,args=[item["id"]],value=item["is_completed"])
 
     st.divider()
 
