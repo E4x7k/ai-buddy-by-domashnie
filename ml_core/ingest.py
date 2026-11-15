@@ -70,7 +70,7 @@ def run_ingest() -> None:
 
     collection = client.create_collection(name=COLLECTION_NAME)
 
-    batch_size = 500
+    batch_size = 64
     for i in tqdm(range(0, len(all_chunks), batch_size), desc="Векторизация и загрузка"):
         batch_chunks = all_chunks[i : i + batch_size]
         batch_metadatas = all_metadatas[i : i + batch_size]
