@@ -8,7 +8,6 @@ RUN uv sync --frozen --no-dev
 
 COPY . .
 
-# Делаем скрипт исполняемым и назначаем его точкой входа
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
