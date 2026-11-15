@@ -12,6 +12,10 @@ services:
       - ./chroma_db:/app/chroma_db
       - ./db_data:/app/db_data
       - ./models:/app/models
+    command: >
+      sh -c "uv run python setup_embedder.py &&
+             uv run python -m ml_core.ingest &&
+             uv run uvicorn backend.main:app --host 0.0.0.0 --port 8000"
 
   frontend:
     build: .
