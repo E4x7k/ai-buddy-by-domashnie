@@ -1,0 +1,701 @@
+Управление памятью в Swift: практические задачи и решения
+
+Практические задачи по управлению памятью в Swift
+
+Важно: Во всех практических задачах стоит считать, что top-level code исполняется в пределах какой-либо функции. Вызов функции опущен для упрощения понимания кода.
+
+Задача 1
+
+Какие проблемы с памятью присутствуют в данном коде? Как можно их исправить?
+
+class ClassA {
+     var next: ClassB? = nil
+
+}
+class ClassB {
+     var next: ClassA? = nil
+}
+let a = ClassA()
+ let b = ClassB()
+ a.next = b
+ b.next = a
+
+Ответ:
+
+В данном коде присутствует strong reference cycle : ClassA содержит сильную ссылку на ClassB , ClassB содержит сильную ссылку на ClassA .
+
+class ClassA {
+     var next: ClassB? = nil
+
+}
+class ClassB {
+     weak var next: ClassA? = nil
+
+}
+
+let a = ClassA()
+ let b = ClassB()
+ a.next = b
+ b.next = a
+
+Задача 2
+
+Скомпилируется ли код? Почему?
+
+class MyClass {}
+ weak var array = [MyClass()]
+
+Ответ:
+
+Нет, не скомпилируется. Так как weak может быть применён только к reference типам данных, тогда как массив является value типа .
+
+Если требуется хранить в массиве weak ссылки, то для этого можно обернуть хранимую сущность.
+
+Например:
+
+class MyClass {}
+ class WeakBox {
+
+    weak var myClass: MyClass?
+
+    init(_ myClass: MyClass) {
+         self.myClass = myClass
+
+} }
+var array = [WeakBox(MyClass())]
+
+Задача 3
+
+Какие проблемы с памятью возникают в данном коде? Как их можно исправить?
+
+@_optimize(none)
+ func foo(_ number: Int) {
+
+    guard number != 0 else { return }
+     let newNumber = number - 2
+     foo(newNumber)
+}
+foo(3)
+
+Ответ :
+
+В данном коде присутствует бесконечная рекурсия. Она возникает из-за того, что значение number никогда не будет равно 0 .
+
+С точки зрения памяти, бесконечная рекурсия приводит к переполнению стека (stack overflow) . В реальных приложениях, переполнение стека может возникнуть не только из-за рекурсии, а, например, из-за огромного числа создаваемых value типов.
+
+Исправить проблему в текущем коде можно, изменив условие number != 0 на number >= 0 .
+
+Пример исправления:
+
+@_optimize(none)
+ func foo(_ number: Int) {
+
+    guard number != 0 else { return }
+     let newNumber = number - 2
+     foo(newNumber)
+}
+foo(3)
+
+Примечание: @_optimize(none) использован в примере для отключения tail call optimization . При её наличие произойдет зацикливание, без переполнения стека.
+
+Задача 4
+
+Скомпилируется ли код? Почему?
+
+struct MyStruct {
+     var next: MyStruct?
+
+}
+
+Если заменить struct на class , что-нибудь изменится? Почему?
+
+class MyClass {
+     var next: MyClass?
+}
+
+Если заменить class на enum , что-нибудь изменится? Почему?
+
+enum MyEnum {
+     case next(MyEnum)
+}
+
+Ответ : Следующий код не скомпилируется:
+
+struct MyStruct {
+     var next: MyStruct?
+}
+
+Причина в том, что struct является value типом данных. Во время компиляции компилятор попробует оценить размер памяти необходимый для MyStruct и попадёт в рекурсию. Так как для определения размера структуры MyStruct , потребуется определить размер поля next . Для определения размера поля next необходимо знать размер структуры MyStruct . Происходит зацикливание.
+
+При использовании reference типов такая проблема не возникнет. Рассмотрим на примере:
+
+class MyClass {
+     var next: MyClass?
+
+}
+
+В данном случае, если потребуется оценить полный размер памяти под MyClass , эта процедура не вызовет зацикливания. Потому что поле next хранит не саму сущность MyClass , а ссылку на неё (классы — ссылочный тип данных). Размер которой не зависит от написанного кода, а задаётся разрядностью системы, под которую компилируется код (для 64-битных машин он будет 8 байт).
+
+В случае использования enum размер сущности не получится рассчитать, так как enum — value тип. Однако, это можно исправить воспользовавшись ключевым словом indirect .
+
+Пример исправления:
+
+indirect enum MyEnum {
+     case next(MyEnum)
+
+}
+
+Задача 5
+
+Что будет напечатано в консоль? Почему?
+
+struct StructA {
+     let a: Bool = false
+     let b: UInt64 = 0
+
+}
+ print("Size: \(MemoryLayout<StructA>.size); Stride:
+ \(MemoryLayout<StructA>.stride)")
+
+struct StructB {
+     let a: UInt64 = 0
+     let b: Bool = false
+
+}
+ print("Size: \(MemoryLayout<StructB>.size); Stride:
+ \(MemoryLayout<StructB>.stride)")
+
+class MyClass {
+     let a: UInt64 = 0
+     let b: Bool = false
+
+}
+ print("Size: \(MemoryLayout<MyClass>.size); Stride:
+ \(MemoryLayout<MyClass>.stride)")
+
+Ответ:
+
+Для структуры StructA будет напечатано "Size: 16; Stride: 16" .
+
+struct StructA {
+     let a: Bool = false
+     let b: UInt64 = 0
+
+}
+
+Несмотря на то, что Bool занимает 1 байт, а UInt64 8 байт, размер StructA будет 16 байт из-за выравнивания . Выравнивание данных по машинному слову , позволяет считывать/записывать значение переменных за минимальное число операций.
+
+UInt64 требует выравнивание в 8 байт, а значит начало его местоположения в памяти должно быть кратно 8, при отсчёте с 0 от начала структуры (говоря иначе, поля UInt64 могут быть записаны начиная с 0, 8, 16, 24... байта от начала структуры). Поэтому появляются 7 пустых байт ( Bool 1 байт и 7 байт для выравнивания UInt64 ).
+
+Для структуры StructB будет напечатано "Size: 9; Stride: 16" .
+
+struct StructB {
+     let a: UInt64 = 0
+     let b: Bool = false
+
+}
+
+Значение поля size в этом случае выглядит логично ( Bool занимает 1 байт, UInt64 8 байт, получаем 9 байт на всю структуру). Однако, поле stride здесь выглядит более запутанным. stride показывает как должны быть выровнены сущности, если они идут в непрерывной области памяти (например, в массиве). В данном случае, как и в примере выше, из-за 8-байтового выравнивания UInt64 в непрерывной области памяти получаем 7 дополнительных байт для выравнивания между структурами.
+
+Для класса MyClass будет напечатано "Size: 8; Stride: 8" . Так как для value type MemoryLayout отображает характеристики ссылки.
+
+Задача 6
+
+Что будет напечатано в консоль? Почему?
+
+protocol MyProtocol {
+     var a: UInt64 { get }
+
+}
+ struct StructA: MyProtocol {
+
+    let a: UInt64 = 1
+ }
+
+struct StructB: MyProtocol {
+     let a: UInt64 = 10
+     let b: UInt64 = 20
+
+}
+let a = StructA()
+ let b = StructB()
+ let array: [MyProtocol] = [a, b]
+
+print(MemoryLayout.size(ofValue: a))
+ print(MemoryLayout.size(ofValue: b))
+ print(MemoryLayout.size(ofValue: array[0]))
+ print(MemoryLayout.size(ofValue: array[1]))
+
+Ответ:
+
+В консоль будет напечатан следующий результат:
+
+8 16 40 40
+
+По результатам выполнения print(MemoryLayout.size(ofValue: a)) будет напечатано 8 . Так как переменная a является типа StructA , которая содержит в себе одно поле типа UInt64 размера в 8 байт.
+
+Для print(MemoryLayout.size(ofValue: b)) будет напечатано 16 . Так как переменная b является типа StructB , которая содержит в себе два поля типа UInt64 размера в 8 байт каждое.
+
+Для print(MemoryLayout.size(ofValue: array[0])) и print(MemoryLayout.size(ofValue: array[1])) будет напечатано 40. Так как массив array имеет тип Array<MyProtocol> , то в нём лежат не сущности StructA и StructB , а их экзистенциальные контейнеры для протокола MyProtocol . Базовый экзистенциальный контейнер имеет размер в 5 машинных слов (40 байт для 64 битной системы).
+
+Задача 7
+
+Что будет напечатано в консоль? Почему?
+
+protocol ProtocolA {}
+ protocol ProtocolB: AnyObject {}
+
+class MyClass: ProtocolA, ProtocolB {}
+
+let a: ProtocolA = MyClass()
+ let b: ProtocolB = MyClass()
+ let c: ProtocolA & ProtocolB = MyClass()
+
+print(MemoryLayout.size(ofValue: a))
+ print(MemoryLayout.size(ofValue: b))
+ print(MemoryLayout.size(ofValue: c))
+
+Ответ:
+
+В консоль будет напечатан следующий результат:
+
+40 16 24
+
+Переменная a является типа ProtocolA , поэтому для неё будет распечатан размер базового экзистенциального контейнера протокола. Базовый existential контейнер имеет размер в 5 машинных слов (40 байт для 64 битной системы).
+
+Переменная b является типом ProtocolB — Class-Only протоколом . Для class-only протоколов Swift способен применить ряд оптимизаций. Одна из которых — создание «упрощённого» экзистенциального контейнера . Обычный экзистенциальный контейнер содержит в себе :
+
+3 машинных слова под хранение данных, если они туда помещаются или ссылку на данные;
+
+1 машинное слово для мета данных (в том числе Value Witness Table);
+
+1 машинное слово для Protocol Witness Table, которая осуществляет диспетчеризацию по протокольным методам.
+
+Зная, что протокол используется только для классов (ссылочных типов), количество машинных слов необходимых на хранение данных может быть сокращено до одного слова, так как протокол храним только ссылку на класс. Помимо этого эти знания, позволяют избавиться от мета данных, так как они хранятся внутри «ссылки на класс» ( HeapObject ). Таким образом, размер экзистенциального контейнера для Class-Only протоколов сокращён до двух машинных слов: одно слово под ссылку на объект (на HeapObject ), второе слово под Protocol Witness Table. Поэтому для переменной хранящей значение Class-Only Protocols мы получаем размер в 2 машинных слова (16 байт на 64 битной системы).
+
+Переменная c является типа композицией протоколов ProtocolA и ProtocolB . В этом случае, при создание экзистенциального контейнера из ProtocolB делается вывод, что переменная может содержать только объекты. А следовательно, размер контейнера сокращается сразу на 3 машинных слова (как для переменной b , до двух машинных слов).
+
+Однако, для того, чтобы переменная c могла себя вести в роли ProtocolA и ProtocolB , ей требуется хранить две Protocol Witness Table под каждый из типов. Таким образом получаем размер экзистенциального контейнера в 3 машинных слова (24 байта на 64 битной системы):
+
+1 машинное слово под ссылку на HeapObject ;
+
+1 машинное слово под ProtocolA Protocol Witness Table;
+
+1 машинное слово под ProtocolB Protocol Witness Table.
+
+Задача 8
+
+Возникнет ли утечка памяти? Почему?
+
+protocol ProtocolA {
+     var b: ProtocolB? { get set }
+
+}
+protocol ProtocolB {
+     var a: ProtocolA? { get set }
+
+}
+ struct StructA: ProtocolA {
+
+    var b: ProtocolB?
+
+// Поля в 4 машинных слова,
+// чтобы превысить размер полей под данные в экзистенциальном контейнере и структура оказалась на куче
+    let int1: Int = 1
+     let int2: Int = 2
+     let int3: Int = 3
+     let int4: Int = 4
+
+}
+ struct StructB: ProtocolB {
+
+    var a: ProtocolA?
+
+// Поля в 4 машинных слова,
+// чтобы превысить размер полей под данных в экзистенциальном контейнере и структура оказалась на куче
+    let int1: Int = 1
+     let int2: Int = 2
+     let int3: Int = 3
+     let int4: Int = 4
+
+}
+var a: ProtocolA = StructA()
+ var b: ProtocolB = StructB()
+ a.b = b
+ b.a = a
+
+Ответ:
+
+Нет утечки памяти не возникнет, несмотря на то, что структуры расположены на куче и как бы ссылаются друг на друга. Потому что для структур продолжает работать value семантика. Она обеспечивается Copy on Write через экзистенциальный контейнер . Так как далее по коду мы меняем состояние переменной a и b , то получаем что в a.b и b , и b.a и a лежат разные сущности соответственно.
+
+Задача 9
+
+Что будет напечатано в консоль? Если заменим строчку let printValue = { , на let printValue = { [myClass] in , то что-то поменяется? Почему?
+
+class MyClass {
+     var value: Int = 0
+
+}
+ var myClass = MyClass()
+
+myClass.value = 1
+
+let printValue = { // Если добавить `[myClass] in`, изменится ли что-то? print(myClass.value)
+}
+ printValue()
+
+myClass = MyClass()
+ myClass.value = 2
+ printValue()
+
+Ответ:
+
+В первом случае, в консоль будет напечатано:
+
+1
+
+2
+
+Во втором случае (если добавить [myClass] in ), будет напечатано:
+
+1
+
+Такие различия вызваны тем, что в первом случае, контекст замыкания не явно захватывает ссылку на переменную (иначе говоря: захватывает ссылку на ссылку объекта). Поэтому, в дальнейшем, изменив значение захваченной переменной путём присваивания ей нового объекта, мы получим новое значение в замыкании .
+
+Во втором же случае, при явном объявлении myClass в capture list происходит копирование значение переменной. То есть копируется ссылка на объект. Поэтому, в дальнейшем, при изменении значении переменной myClass , эти изменения не окажут влияние на замыкание .
+
+Задача 10
+
+Какие проблемы с памятью возникают в данном коде? Как их можно исправить?
+
+import Foundation
+ class MyClass {
+
+    private var callback: (() -> ())?
+
+    func foo() {
+         callback = {
+
+            DispatchQueue.main.async { [weak self] in
+                 self?.updateView()
+
+} }
+}
+    private func updateView() {
+         // ...
+} }
+let myClass = MyClass()
+ myClass.foo()
+
+Ответ:
+
+В коде присутствует утечка памяти. Несмотря на то, что замыкание, передаваемое в DispatchQueue.main.async , делает слабый захват через capture list . Дело в том, что замыкание для DispatchQueue.main.async создаётся из замыкания для callback . А значит, первый захват self происходит в нём. Так как self не объявлен в capture list, то захват происходит не явный и по сильной ссылке. Поэтому, в замыкании для callback происходит не явный сильный захват self .
+
+Исправить это можно следующим способом, переместив [weak self] in в замыкание для callback :
+
+import Foundation
+ class MyClass {
+
+    private var callback: (() -> ())?
+
+    func foo() {
+         callback = { [weak self] in
+
+            DispatchQueue.main.async {
+                 self?.updateView()
+
+} }
+}
+    private func updateView() {
+         // ...
+
+} }
+let myClass = MyClass()
+ myClass.foo()
+
+Задача 11
+
+Какие проблемы с памятью возникают в данном коде? Как их можно исправить?
+
+class MyClass {
+     var closure: (() -> ())?
+
+    init(closure: (() -> Void)? = nil) {
+         self.closure = closure ?? foo
+
+}
+    private func foo() {
+         // ...
+
+} }
+
+Ответ:
+
+В коде возникнет утечка памяти, если в инициализатор MyClass не передать значение или передать nil. В этом случае произойдёт не явный сильный захват self ( MyClass ) для вызова foo в замыкание closure , которое храниться в MyClass . Получается strong reference cycle. Чтобы от него избавиться следует захватить self ( MyClass ) через weak или unowned. Например:
+
+class MyClass {
+     var closure: (() -> ())?
+
+    init(closure: (() -> Void)? = nil) {
+         self.closure = closure ?? { [weak self] in self?.foo() }
+
+}
+    private func foo() {
+         // ...
+
+} }
+
+Задача 12
+
+1. Что напечатает код в консоль?
+
+2. Будет ли падение приложения? Если да, то как исправить?
+
+3. Чем плоха текущая реализация MyViewController.update с точки зрения памяти? Как её можно исправить?
+
+class MyView {
+     var subviews: [MyView] = []
+
+    deinit {
+         print("Deinit \(Self.self)")
+
+} }
+class MyLabelView: MyView {
+     func update(text: String) {
+
+        print("Update text to \(text)")
+     }
+
+}
+ class MyViewController {
+
+    private var view: MyView?
+     private var updateText: ((String) -> ())?
+
+    func loadView() {
+         self.view = MyView()
+         let labelView = MyLabelView()
+         view?.subviews.append(labelView)
+
+        updateText = { [unowned labelView] in
+             labelView.update(text: $0)
+
+} }
+    func update(text: String) {
+         guard view != nil else { return }
+         updateText?(text)
+}
+    func cleanView() {
+         view = nil
+
+} }
+let vc = MyViewController()
+ vc.loadView()
+ vc.update(text: "Hello!")
+ vc.cleanView()
+ vc.update(text: "Bye!")
+
+Ответ:
+
+1. Что напечатает код в консоль? В консоли будет напечатано:
+
+Update text to Hello !
+
+Deinit MyView
+
+Deinit MyLabelView
+
+2. Будет ли падение приложения? Если да, то как исправить?
+
+Нет, приложение не упадет. В методе MyViewController.update проверяется существование view , a время жизни labelView совпадает с времени жизни view .
+
+3. Чем плоха текущая реализация MyViewController.update с точки зрения памяти? Как её можно исправить?
+
+Текущая реализация MyViewController.update превращает MyLabelView в зомби объект . Как видно из принтов, у него вызывается deinit. Однако, память после deinit-а не освобождается, объект зависает на стадии Deinited . Причина в том что, у объекта отсутствует side table (в отличие от weak ссылок, появление safe unowned ссылки не является поводом для создания side table). Следовательно, счётчик safe unowned ссылок находится в метаданных самого объекта. А значит, мы не можем освободить память под весь объект. Проблема аналогична причине появления side table , только связана с safe unowned ссылками. Для unsafe unowned ссылок проблема не актуальна, так как последние не используют счётчик ссылок. Apple упоминали об этом моменте в WWDC24: Analyze heap memory (27:43) .
+
+Исправить проблему можно двумя путями. Первый: занулить MyViewController.updateText в методе MyViewController.cleanView . Второй: использовать сильную ссылку на MyLabelView вместо замыкания и занулять её в MyViewController.cleanView . Использование сильной ссылки также не потребует дополнительных затрат на создание side table и при этом сделает код более понятным.
+
+Пример исправления:
+
+class MyView {
+     var subviews: [MyView] = []
+
+    deinit {
+         print("Deinit \(Self.self)")
+
+} }
+class MyLabelView: MyView {
+
+    func update(text: String) {
+         print("Update text to \(text)")
+
+} }
+class MyViewController {
+     private var view: MyView?
+
+    private var labelView: MyLabelView?
+
+    func loadView() {
+         self.view = MyView()
+         let labelView = MyLabelView()
+         self.labelView = labelView
+         view?.subviews.append(labelView)
+}
+    func update(text: String) {
+         labelView?.update(text: text)
+
+}
+    func cleanView() {
+         view = nil
+
+        labelView = nil
+     }
+
+}
+let vc = MyViewController()
+ vc.loadView()
+ vc.update(text: "Hello!")
+ vc.cleanView()
+ vc.update(text: "Bye!")
+
+Задача 13
+
+Почему код не скомпилируется? Что следует сделать, чтобы код скомпилировался?
+
+class ClassA {
+     var b = ClassB(a: self)
+
+    func foo() {
+         print(b)
+
+} }
+class ClassB {
+     let a: ClassA
+
+    init(a: ClassA) {
+self.a = a }
+}
+let a = ClassA()
+ a.foo()
+
+Ответ:
+
+Код не скомпилируется, так как происходит зацикливание при инициализации. Для завершения инициализации ClassA требуется заполнение поля ClassA.b — необходимо создать объект ClassB . Для его создания нужен проинициализированный объект ClassA .
+
+Исправить проблему можно двумя путями:
+
+Отсрочить создание ClassA.b при помощи lazy . Тогда переменная ClassA.b будет создана при первом обращении к ней, что произойдёт уже после инициализации класса ClassA .
+
+Сделав ClassA.b опциональным и заполнив его впоследствии. В этом случае, ClassA.b проинициализируется nil на момент создания класса, а затем примет нужное значение.
+
+При исправлении любым из методом нужно заметить strong reference cycle между ClassA и ClassB и исправить его.
+
+Пример решения через lazy :
+
+class ClassALazy {
+     lazy var b = ClassBLazy(a: self)
+
+    func foo() {
+         print(b)
+
+} }
+class ClassBLazy {
+     weak var a: ClassALazy?
+
+    init(a: ClassALazy) {
+         self.a = a
+
+} }
+let aLazy = ClassALazy()
+ aLazy.foo()
+
+Пример решения через optional:
+
+class ClassAOpt {
+     var b: ClassBOpt?
+
+    init() {
+         self.b = ClassBOpt(a: self)
+
+}
+    func foo() {
+         guard let b else { return }
+         print(b)
+
+} }
+class ClassBOpt {
+     weak var a: ClassAOpt?
+
+    init(a: ClassAOpt) {
+         self.a = a
+
+} }
+let aOpt = ClassAOpt()
+ aOpt.foo()
+
+Задача 14
+
+Что будет напечатано в консоль? Почему именно в таком порядке?
+
+class MyClass {
+
+    static let shared = MyClass()
+
+    init() {
+         print("Init \(Self.self)")
+
+}
+    func foo() {
+         // ...
+
+} }
+let myClass = MyClass()
+ print("Hello")
+ MyClass.shared.foo()
+
+Ответ:
+
+В консоль напечатается:
+
+Init MyClass
+  Hello
+  Init MyClass
+
+Прежде всего напечатается Init MyClass , так как создастся экземпляр класса для переменной myClass .
+
+Затем напечатается Hello и Init MyClass , так как при обращении к MyClass.shared создастся ещё один экземпляр MyClass . Второй Init MyClass будет напечатан после Hello , так как глобальные переменные имеют lazy инициализацию в Swift.
+
+Задача 15
+
+Какие проблемы возникают в этом коде? Как их можно решить?
+
+struct MyStruct {
+     var a = 1
+     var b = 2
+
+}
+class MyClass {
+     static var myStruct = MyStruct()
+
+}
+func swap(_ a: inout Int, _ b: inout Int) {
+     let buff = a
+
+a=b
+b = buff
+}
+swap(&MyClass.myStruct.a, &MyClass.myStruct.b)
+
+Ответ :
+
+В ходе выполнения кода возникнет runtime ошибка:
+
+Thread 1: Simultaneous accesses to 0x100008000 , but modification requires exclusive access
+
+В момент формирования первого аргумента функции swap создаётся long-term доступ к переменной myStruct ( так как параметр является inout и при изменении одного поля структуры следует менять всю структуру ). При формировании второго аргумента, также пытается открыться long-term доступ к myStruct . Однако, так как long-term доступ к myStruct всё ещё открыт для первого аргумента и компилятор не видит переменную на всём жизненном её цикле, то получаем overlapping на запись.
+
+Исправить данную ошибку можно или сделав myStruct локальной переменной , или отказавшись от функции использующей inout.
+
+Итоги
+
+В Swift управление памятью строится вокруг value‑семантики, ARC и четкого разделения областей памяти. Понимание того, где и как размещаются данные и в какой момент они создаются, позволяет писать более предсказуемый и производительный код, избегать утечек памяти и осознанно выбирать между структурами и классами.

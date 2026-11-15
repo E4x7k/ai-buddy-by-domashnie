@@ -11,8 +11,6 @@ wheels/
 
 .env
 .vscode
-data/*
-!data/.gitkeep
 models/
 chat_history.db
 chroma_db

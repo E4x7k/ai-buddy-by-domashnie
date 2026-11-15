@@ -81,8 +81,6 @@ class RAGService:
             context = "\n\n".join(results['documents'][0])
             metadatas = results['metadatas'][0]
             sources = list(set([meta.get('source', 'Неизвестно') for meta in metadatas]))
-            
-        yield json.dumps({"sources": sources}, ensure_ascii=False) + "\n"
 
         if user_role == "mentor":
             role_rule = (
@@ -92,18 +90,25 @@ class RAGService:
             )
         else:
             role_rule = (
-                "Ты общаешься со стажером. Ты должен помогать ему с онбордингом и инструментами (Jira, Git). "
-                "Если стажер просит оформить отгул, ты должен использовать доступный тебе инструмент (Tool) для этого."
+                "Ты общаешься со стажером. Твоя главная задача — использовать инструменты (Tools) для помощи. "
+                "Если стажер просит оформить отгул или сообщает о болезни — ОБЯЗАТЕЛЬНО вызывай 'request_vacation'. "
+                "Если стажер просит доступ к любому корпоративному инструменту (Jira, Confluence, GitHub и т.д.) — ОБЯЗАТЕЛЬНО вызывай 'request_access'. "
+                "Никогда не пиши, что ты 'оформляешь заявку', просто вызови функцию."
             )
 
+        # 1. Оборачиваем контекст в теги (LLM так лучше понимают, где данные)
+        context_block = f"<context>\n{context}\n</context>"
+
+        # 2. Обновленный системный промпт
         system_prompt = (
-            "Ты — AI-buddy, дружелюбный ИИ-помощник для адаптации стажеров в компании Авито. "
-            "Твоя задача — отвечать на вопросы, используя ТОЛЬКО предоставленный контекст.\n"
-            "Правила:\n"
-            "1. Внимательно читай контекст.\n"
-            "2. Если в контексте нет прямого ответа, честно скажи: 'Я не нашел этой информации в базе знаний.'\n"
-            "3. Не выдумывай факты.\n"
-            f"4. {role_rule}"
+            "Ты — AI-buddy, экспертный ИИ-помощник для адаптации стажеров в Авито. "
+            "Твоя задача — давать точные, структурированные и полезные ответы, опираясь на предоставленный контекст.\n\n"
+            "Правила работы с информацией:\n"
+            "1. Если вопрос просит СРАВНИТЬ два понятия (например, 'чем отличается А от Б'), найди в контексте информацию об обоих понятиях и самостоятельно сформулируй сравнение по пунктам.\n"
+            "2. Отвечай структурированно, но КРАТКО. Твоя цель — дать суть. Используй списки, но ограничивайся 3-5 ключевыми пунктами. Избегай вступлений вроде 'Отличный вопрос!' или 'Конечно, я с радостью отвечу'. \n"
+            "3. Категорически ЗАПРЕЩЕНО выдумывать факты, которых нет в контексте. Если в контексте нет информации для ответа, вежливо скажи: 'К сожалению, в предоставленной базе знаний нет информации по этому вопросу.'\n"
+            f"4. {role_rule}\n"
+            "5. Не предлагай пользователю 'разобрать что-то подробнее', если он об этом не просил. Просто дай лучший ответ на текущий вопрос."
         )
 
         messages = [{"role": "system", "content": system_prompt}]
@@ -112,7 +117,7 @@ class RAGService:
             
         messages.append({
             "role": "user", 
-            "content": f"Контекст из базы знаний:\n{context}\n\nВопрос пользователя: {question}"
+            "content": f"Вот данные из базы знаний Авито:\n{context_block}\n\nВопрос пользователя: {question}"
         })
 
         today_str = date.today().isoformat()
@@ -173,7 +178,7 @@ class RAGService:
             yield json.dumps({"text": "⚠️ Внутренняя ошибка при обращении к нейросети."}, ensure_ascii=False) + "\n"
             return
 
-        tool_calls_to_process = []
+        tool_calls_dict = {} # <--- ИСПОЛЬЗУЕМ СЛОВАРЬ ВМЕСТО СПИСКА
         
         try:
             async for chunk in response:
@@ -184,10 +189,17 @@ class RAGService:
                 
                 if delta.tool_calls:
                     for tc in delta.tool_calls:
-                        if tc.index == len(tool_calls_to_process):
-                            tool_calls_to_process.append({"id": tc.id, "name": tc.function.name, "arguments": ""})
-                        if tc.function.arguments:
-                            tool_calls_to_process[tc.index]["arguments"] += tc.function.arguments
+                        # Если такого индекса еще нет, создаем для него запись
+                        if tc.index not in tool_calls_dict:
+                            tool_calls_dict[tc.index] = {"id": "", "name": "", "arguments": ""}
+                        
+                        if tc.id:
+                            tool_calls_dict[tc.index]["id"] = tc.id
+                        if tc.function:
+                            if tc.function.name:
+                                tool_calls_dict[tc.index]["name"] = tc.function.name
+                            if tc.function.arguments:
+                                tool_calls_dict[tc.index]["arguments"] += tc.function.arguments
                 
                 if delta.content:
                     yield json.dumps({"text": delta.content}, ensure_ascii=False) + "\n"
@@ -195,6 +207,11 @@ class RAGService:
         except Exception as e:
             logger.warning("Ошибка стриминга: %s", e)
             return
+
+        tool_calls_to_process = [v for v in tool_calls_dict.values() if v["name"]]
+
+        if not tool_calls_to_process and sources:
+            yield json.dumps({"sources": sources}, ensure_ascii=False) + "\n"
 
         # Обработка вызова инструмента
         if tool_calls_to_process:
@@ -208,7 +225,7 @@ class RAGService:
             async with httpx.AsyncClient() as client:
                 for tc in tool_calls_to_process:
                     try:
-                        args = json.loads(tc["arguments"])
+                        args = json.loads(tc["arguments"]) if tc["arguments"] else {}
                         
                         if tc["name"] == "request_vacation":
                             logger.info("Вызов API отгула: %s", args)
