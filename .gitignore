@@ -17,3 +17,5 @@ models/
 chat_history.db
 chroma_db
 buddy.db
+.coverage
+.pytest_cache
