@@ -62,7 +62,7 @@ START_TIME = datetime.now(UTC)
 @app.get("/checklist",tags=["checklist"],response_model=ChecklistResponse)
 def checklist():
     """Эндпоинт для вывода чеклиста"""
-    connection=sqlite3.connect("buddy.db")
+    connection=sqlite3.connect("db_data/buddy.db")
     result=get_checklist(connection)
     return result
 @app.get("/health", tags=["system"])

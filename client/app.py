@@ -2,6 +2,9 @@ import streamlit as st
 import requests 
 import uuid
 import json
+import os
+
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
 
 if "messages" not in st.session_state: #пустая история с сообщениями от пользователя
     st.session_state.messages = []
@@ -16,7 +19,7 @@ if "pending_prompt" not in st.session_state:
 
 def get_checklist():
     try:
-        response = requests.get("http://127.0.0.1:8000/checklist")  
+        response = requests.get(f"{API_URL}/checklist")  
         return response.json()
     except Exception:
         st.error("Не удалось загрузить чеклист")
@@ -26,7 +29,7 @@ if "checklist" not in st.session_state:
 
 def toggle_task(item_id):
     try:
-        requests.post("http://127.0.0.1:8000/checklist/toggle", json={"item_id": item_id})
+        requests.post(f"{API_URL}/checklist/toggle", json={"item_id": item_id})
         for item in st.session_state.checklist['items']:
             if item['id'] == item_id:
                 item['is_completed'] = not item['is_completed']
@@ -82,7 +85,7 @@ if st.session_state.is_generating and st.session_state.pending_prompt:
                 "user_role": st.session_state.user_role
             }
             
-            with requests.post("http://127.0.0.1:8000/chat", json=payload, stream=True, timeout=60) as response:
+            with requests.post(f"{API_URL}/chat", json=payload, stream=True, timeout=60) as response:
                 response.raise_for_status()
 
                 for line in response.iter_lines(decode_unicode=True):
